@@ -1,103 +1,97 @@
 pragma solidity ^0.5.0;
 
-/*
-                                  Insert Code Snippet 1 Here
-*/
+import '../contracts/Ilighthouse.sol';
+
 
 contract Gamble {
+	ILighthouse public myLighthouse;
 
-  /*
-                                    Insert Code Snippet 2 Here
-  */
+	address[20] public accounts; // Array of users registered
+	uint256 public numAccounts = 0; // Should be <= 19, this holds number of registered users
 
-    address[20] public accounts;             // Array of users registered
-    uint public numAccounts = 0;             // Should be <= 19, this holds number of registered users
+	mapping(address => uint256) public balances; // Stores users deposited ether in a wallet
+	mapping(address => uint256) public toBet; // Holds ether users have decided to gamble on an upcoming dice roll
+	mapping(address => uint256) public chosenNumber; // Holds the users chosen number to bet on in an upcoming dice roll
 
-    mapping(address => uint) public balances;     // Stores users deposited ether in a wallet
-    mapping(address => uint) public toBet;        // Holds ether users have decided to gamble on an upcoming dice roll
-    mapping(address => uint) public chosenNumber; // Holds the users chosen number to bet on in an upcoming dice roll
+	constructor(ILighthouse _myLighthouse) public {
+		myLighthouse = _myLighthouse;
+	}
 
-  /*
-                                    Insert Code Snippet 3 Here
-  */
+	// Pass in sender address manually because truffle proxy contracts interfere with msg.sender
+	function deposit(address msgSender) external payable {
+		bool exists = false;
+		for (uint256 i = 0; i < numAccounts; i++) {
+			if (accounts[i] == msgSender) {
+				exists = true;
+				break;
+			}
+		}
 
-// Pass in sender address manually because truffle proxy contracts interfer with msg.sender
-    function deposit(address msgSender) external payable {
+		if (exists == false) {
+			accounts[numAccounts] = msgSender;
+			numAccounts++;
+		}
 
-      bool exists = false;
-      for(uint i = 0; i < numAccounts; i++){
-        if( accounts[i] == msgSender){
-          exists = true;
-          break;
-        }
-      }
+		balances[msgSender] += msg.value;
+	}
 
-      if(exists == false){
-        accounts[numAccounts] = msgSender;
-        numAccounts++;
-      }
+	// Allows users to withdraw all their ether
+	function withdraw(address payable msgSender) public {
+		uint256 amount = balances[msgSender];
+		balances[msgSender] = 0;
 
-      balances[msgSender] += msg.value;
-    }
+		bool ok = false;
+		bytes memory mem;
+		(ok, mem) = msgSender.call.value(amount).gas(20000)(''); // fallback function logs withdraw in a storage write, requires 20000 gas
+		require(ok = true, 'Transfer failed');
+	}
 
-// Allows users to withdraw all their ether
-    function withdraw(address payable msgSender) public {
-      uint amount = balances[msgSender];
-      balances[msgSender] = 0;
+	// Functions to display the internal state
+	function checkAccountLength() public view returns (uint256) {
+		return accounts.length;
+	}
 
-      bool ok = false;
-      bytes memory mem;
-      (ok, mem) = msgSender.call.value(amount).gas(20000)("");    // fallback function logs withdraw in a storage write, requires 20000 gas
-      require(ok = true, "Transfer failed");
-    }
+	function checkNumAccounts() public view returns (uint256) {
+		return numAccounts;
+	}
 
+	function checkAccounts(uint256 index) public view returns (address) {
+		require(index < 20, 'No more than 20 accounts can be registered at a time');
+		return accounts[index];
+	}
 
-// Functions to display the internal state
-    function checkAccountLength() public view returns(uint) {
-      return accounts.length;
-    }
+	function checkBalance(address msgSender) public view returns (uint256) {
+		return balances[msgSender];
+	}
 
-    function checkNumAccounts() public view returns(uint) {
-      return numAccounts;
-    }
+	function checkBet(address msgSender) public view returns (uint256) {
+		return toBet[msgSender];
+	}
 
-    function checkAccounts(uint index) public view returns(address) {
-      require(index < 20, "No more than 20 accounts can be registered at a time");
-      return accounts[index];
-    }
+	function checkNumber(address msgSender) public view returns (uint256) {
+		return chosenNumber[msgSender];
+	}
 
-    function checkBalance(address msgSender) public view returns(uint) {
-      return balances[msgSender];
-    }
+	// User places a bet on a number they think will win the dice roll
+	function gamble(address msgSender, uint256 money, uint256 number) public {
+		balances[msgSender] -= money;
+		toBet[msgSender] += money;
+		chosenNumber[msgSender] = number;
+	}
 
-    function checkBet(address msgSender) public view returns(uint) {
-      return toBet[msgSender];
-    }
+	// Rolls the dice for all players who bet on this round, giving a 6x return if they win
+	function diceRoll() public {
+		uint256 winningNumber;
+		bool ok;
+		(winningNumber, ok) = myLighthouse.peekData(); // obtain random number from Rhombus Lighthouse
 
-    function checkNumber(address msgSender) public view returns(uint) {
-      return chosenNumber[msgSender];
-    }
-
-// User places a bet on a number they think will win the dice roll
-    function gamble(address msgSender, uint money, uint number) public {
-      balances[msgSender] -= money;
-      toBet[msgSender] += money;
-      chosenNumber[msgSender] = number;
-    }
-
-// Rolls the dice for all players who bet on this round, giving a 6x return if they win
-    function diceRoll() public {
-
-  /*
-                                    Insert Code Snippet 4 Here
-  */
-
-      for(uint i = 0; i < numAccounts; i++){
-        if( toBet[accounts[i]] != 0 && chosenNumber[accounts[i]] == winningNumber){
-          balances[accounts[i]] += toBet[accounts[i]] * 6;
-        }
-        toBet[accounts[i]] = 0;
-      }
-    }
-
+		for (uint256 i = 0; i < numAccounts; i++) {
+			if (
+				toBet[accounts[i]] != 0 && chosenNumber[accounts[i]] == winningNumber
+			) {
+				balances[accounts[i]] += toBet[accounts[i]] * 6;
+			}
+			toBet[accounts[i]] = 0;
+		}
+	}
 }
